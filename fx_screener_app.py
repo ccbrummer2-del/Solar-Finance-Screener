@@ -292,6 +292,10 @@ def main():
     st.title("Solar Finance - FX Multi-Timeframe Screener")
     st.markdown("**Real-time market state analysis across 5m, 15m, 4h, 1D, and 1W timeframes**")
     
+    # Initialize selected markets in session state if not present
+    if 'selected_markets' not in st.session_state:
+        st.session_state.selected_markets = []
+    
     # Top navigation bar with buttons
     top_col1, top_col2, top_col3 = st.columns([1, 2, 1])
     
@@ -308,7 +312,7 @@ def main():
                 st.session_state.settings_visible = not st.session_state.get('settings_visible', False)
     
     with top_col3:
-        # Scan button (top right)
+        # Scan button (top right) - use session state value
         selected_pairs_list = st.session_state.get('selected_markets', [])
         scan_disabled = len(selected_pairs_list) == 0
         refresh_button = st.button("🔄 Scan Markets", type="primary", disabled=scan_disabled, key="scan_top")
@@ -337,55 +341,128 @@ def main():
             - Mixed = Below 4/5 - Stay out!
             """)
     
-    # Show settings modal if toggled
+    # Show settings modal in sidebar if toggled
     if st.session_state.get('settings_visible', False):
-        with st.expander("Screener Settings", expanded=True):
-            st.subheader("Candle Change Analysis")
+        with st.sidebar:
+            st.markdown("---")
+            st.header("⚙️ Screener Settings")
+            
+            # Initialize temp settings if not present
+            if 'temp_change_timeframe' not in st.session_state:
+                st.session_state.temp_change_timeframe = st.session_state.get('stored_change_timeframe', '1D')
+            if 'temp_change_period' not in st.session_state:
+                st.session_state.temp_change_period = st.session_state.get('stored_change_period', 30)
+            if 'temp_change_timeframe_2' not in st.session_state:
+                st.session_state.temp_change_timeframe_2 = st.session_state.get('stored_change_timeframe_2', '1D')
+            if 'temp_change_period_2' not in st.session_state:
+                st.session_state.temp_change_period_2 = st.session_state.get('stored_change_period_2', 2)
+            if 'temp_sort_by' not in st.session_state:
+                st.session_state.temp_sort_by = st.session_state.get('stored_sort_by', ['Largest Mover'])
+            
+            st.subheader("Candle Change Analysis #1")
             
             col1, col2 = st.columns(2)
             with col1:
                 change_timeframe = st.selectbox(
-                    "Timeframe for % Change:",
+                    "Timeframe:",
                     options=['5m', '15m', '4h', '1D', '1W'],
-                    index=3,
+                    index=['5m', '15m', '4h', '1D', '1W'].index(st.session_state.temp_change_timeframe),
                     help="Calculate absolute % change over this timeframe",
                     key="change_tf_selector"
                 )
+                st.session_state.temp_change_timeframe = change_timeframe
             
             with col2:
                 change_period = st.number_input(
-                    "Number of Candles:",
+                    "Candles Back:",
                     min_value=1,
                     max_value=500,
-                    value=30,
+                    value=st.session_state.temp_change_period,
                     step=1,
                     help="Calculate % change over this many candles back",
                     key="change_period_input"
                 )
+                st.session_state.temp_change_period = change_period
+            
+            st.markdown("---")
+            st.subheader("Candle Change Analysis #2")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                change_timeframe_2 = st.selectbox(
+                    "Timeframe:",
+                    options=['5m', '15m', '4h', '1D', '1W'],
+                    index=['5m', '15m', '4h', '1D', '1W'].index(st.session_state.temp_change_timeframe_2),
+                    help="Calculate absolute % change over this timeframe",
+                    key="change_tf_selector_2"
+                )
+                st.session_state.temp_change_timeframe_2 = change_timeframe_2
+            
+            with col2:
+                change_period_2 = st.number_input(
+                    "Candles Back:",
+                    min_value=1,
+                    max_value=500,
+                    value=st.session_state.temp_change_period_2,
+                    step=1,
+                    help="Calculate % change over this many candles back",
+                    key="change_period_input_2"
+                )
+                st.session_state.temp_change_period_2 = change_period_2
             
             st.markdown("---")
             st.subheader("Sort Results By")
             
-            sort_by = st.radio(
-                "Choose sorting method:",
+            sort_by = st.multiselect(
+                "Choose sorting method(s):",
                 options=['Largest Mover', 'Fully Bullish', 'Fully Bearish'],
-                index=0,
-                help="Largest Mover: Highest % change | Fully Bullish: All timeframes ACC | Fully Bearish: All timeframes DIS",
+                default=st.session_state.temp_sort_by,
+                help="Select one or more: Largest Mover (highest % change) | Fully Bullish (all ACC) | Fully Bearish (all DIS)",
                 key="sort_by_selector"
             )
+            st.session_state.temp_sort_by = sort_by
             
-            # Store in different session state keys
-            st.session_state.stored_change_timeframe = change_timeframe
-            st.session_state.stored_change_period = change_period
-            st.session_state.stored_sort_by = sort_by
-    else:
-        # Set defaults if settings not shown
-        if 'stored_change_timeframe' not in st.session_state:
-            st.session_state.stored_change_timeframe = '1D'
-        if 'stored_change_period' not in st.session_state:
-            st.session_state.stored_change_period = 30
-        if 'stored_sort_by' not in st.session_state:
-            st.session_state.stored_sort_by = 'Largest Mover'
+            st.markdown("---")
+            
+            # Save and Close buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("💾 Save Settings", key="save_settings", type="primary", use_container_width=True):
+                    # Save temp settings to stored settings
+                    st.session_state.stored_change_timeframe = st.session_state.temp_change_timeframe
+                    st.session_state.stored_change_period = st.session_state.temp_change_period
+                    st.session_state.stored_change_timeframe_2 = st.session_state.temp_change_timeframe_2
+                    st.session_state.stored_change_period_2 = st.session_state.temp_change_period_2
+                    st.session_state.stored_sort_by = st.session_state.temp_sort_by
+                    st.session_state.settings_visible = False
+                    st.success("Settings saved!")
+                    time.sleep(0.5)
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ Cancel", key="cancel_settings", use_container_width=True):
+                    # Reset temp settings to stored settings
+                    st.session_state.temp_change_timeframe = st.session_state.get('stored_change_timeframe', '1D')
+                    st.session_state.temp_change_period = st.session_state.get('stored_change_period', 30)
+                    st.session_state.temp_change_timeframe_2 = st.session_state.get('stored_change_timeframe_2', '1D')
+                    st.session_state.temp_change_period_2 = st.session_state.get('stored_change_period_2', 2)
+                    st.session_state.temp_sort_by = st.session_state.get('stored_sort_by', ['Largest Mover'])
+                    st.session_state.settings_visible = False
+                    st.rerun()
+            
+            st.markdown("---")
+    
+    # Set defaults if settings not initialized
+    if 'stored_change_timeframe' not in st.session_state:
+        st.session_state.stored_change_timeframe = '1D'
+    if 'stored_change_period' not in st.session_state:
+        st.session_state.stored_change_period = 30
+    if 'stored_change_timeframe_2' not in st.session_state:
+        st.session_state.stored_change_timeframe_2 = '1D'
+    if 'stored_change_period_2' not in st.session_state:
+        st.session_state.stored_change_period_2 = 2
+    if 'stored_sort_by' not in st.session_state:
+        st.session_state.stored_sort_by = ['Largest Mover']
     
     # Sidebar - Market Selection
     st.sidebar.header("Select Markets")
@@ -397,18 +474,16 @@ def main():
     # Select All / Deselect All buttons
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        if st.button("Select All", key="select_all"):
+        if st.sidebar.button("Select All", key="select_all", use_container_width=True):
             st.session_state.selected_markets = filtered_markets.copy()
+            st.session_state.trigger_scan = True  # Flag to trigger scan after rerun
             st.rerun()
     with col2:
-        if st.button("Deselect All", key="deselect_all"):
+        if st.sidebar.button("Deselect All", key="deselect_all", use_container_width=True):
             st.session_state.selected_markets = []
             st.rerun()
     
     # Market selection with multiselect
-    if 'selected_markets' not in st.session_state:
-        st.session_state.selected_markets = []
-    
     selected_markets = st.sidebar.multiselect(
         f"Markets ({len(filtered_markets)} available):",
         options=filtered_markets,
@@ -438,10 +513,17 @@ def main():
         """)
         return
     
-    # Main content - Scan logic
-    if refresh_button or ('results' not in st.session_state and len(selected_pairs_list) > 0):
+    # Main content - Scan logic (only when button clicked OR when Select All triggers scan)
+    trigger_scan = st.session_state.get('trigger_scan', False)
+    if trigger_scan:
+        st.session_state.trigger_scan = False  # Reset the flag
+        refresh_button = True  # Simulate button press
+    
+    if refresh_button:
         change_timeframe = st.session_state.get('stored_change_timeframe', '1D')
         change_period = st.session_state.get('stored_change_period', 28)
+        change_timeframe_2 = st.session_state.get('stored_change_timeframe_2', '1D')
+        change_period_2 = st.session_state.get('stored_change_period_2', 2)
         
         with st.spinner('Analyzing markets... This may take 30-60 seconds.'):
             results = []
@@ -458,7 +540,7 @@ def main():
                 try:
                     result = analyze_pair(pair_name, symbol)
                     
-                    # Add candle change analysis
+                    # Add first candle change analysis
                     tf_interval = TIMEFRAMES.get(change_timeframe, '1d')
                     df_change = fetch_data(symbol, tf_interval)
                     
@@ -469,6 +551,18 @@ def main():
                         result[f'Change_{change_timeframe}'] = round(price_change_pct, 2)
                     else:
                         result[f'Change_{change_timeframe}'] = None
+                    
+                    # Add second candle change analysis
+                    tf_interval_2 = TIMEFRAMES.get(change_timeframe_2, '1d')
+                    df_change_2 = fetch_data(symbol, tf_interval_2)
+                    
+                    if not df_change_2.empty and len(df_change_2) > change_period_2:
+                        current_price_2 = df_change_2['Close'].iloc[-1]
+                        past_price_2 = df_change_2['Close'].iloc[-(change_period_2 + 1)]
+                        price_change_pct_2 = ((current_price_2 - past_price_2) / past_price_2) * 100
+                        result[f'Change2_{change_timeframe_2}'] = round(price_change_pct_2, 2)
+                    else:
+                        result[f'Change2_{change_timeframe_2}'] = None
                     
                     results.append(result)
                 except Exception as e:
@@ -483,54 +577,98 @@ def main():
             st.session_state.results = results
             st.session_state.stored_change_timeframe = change_timeframe
             st.session_state.stored_change_period = change_period
+            st.session_state.stored_change_timeframe_2 = change_timeframe_2
+            st.session_state.stored_change_period_2 = change_period_2
     
     # Display results
     if 'results' in st.session_state and st.session_state.results:
         df_results = pd.DataFrame(st.session_state.results)
         
-        # Get sort preference
-        sort_by = st.session_state.get('stored_sort_by', 'Largest Mover')
+        # Get sort preferences (now a list)
+        sort_by_list = st.session_state.get('stored_sort_by', ['Largest Mover'])
+        if not isinstance(sort_by_list, list):
+            sort_by_list = [sort_by_list]  # Ensure it's a list for backwards compatibility
+        
         stored_tf = st.session_state.get('stored_change_timeframe', '1D')
         change_col_name = f'Change_{stored_tf}'
         
-        # Sort based on user preference
-        if sort_by == 'Largest Mover':
-            # Sort by absolute % change (largest movers first)
-            if change_col_name in df_results.columns:
-                df_results = df_results.sort_values(change_col_name, key=abs, ascending=False)
-            else:
-                # Fallback to strength sorting
-                df_results = df_results.sort_values('Strength', key=abs, ascending=False)
+        # Apply sorting based on selected criteria
+        # New sorting logic:
+        # 1. Default: always sort by largest mover
+        # 2. Fully Bullish + Largest Mover: filter fully bullish, then sort by largest
+        # 3. Fully Bearish + Largest Mover: filter fully bearish, then sort by largest
+        # 4. Both Bullish + Bearish: bullish first, then bearish
         
-        elif sort_by == 'Fully Bullish':
-            # Filter and sort: All timeframes ACC (accumulation)
-            def is_fully_bullish(row):
-                return all([
-                    row['5m'] == 'accumulation',
-                    row['15m'] == 'accumulation',
-                    row['4h'] == 'accumulation',
-                    row['1D'] == 'accumulation',
-                    row['1W'] == 'accumulation'
-                ])
-            
-            df_results['is_fully_bullish'] = df_results.apply(is_fully_bullish, axis=1)
-            df_results = df_results.sort_values('is_fully_bullish', ascending=False)
-            df_results = df_results.drop('is_fully_bullish', axis=1)
+        # Always create absolute change column for sorting
+        if change_col_name in df_results.columns:
+            df_results['_abs_change'] = df_results[change_col_name].abs()
+        else:
+            df_results['_abs_change'] = 0
         
-        elif sort_by == 'Fully Bearish':
-            # Filter and sort: All timeframes DIS (distribution)
-            def is_fully_bearish(row):
-                return all([
-                    row['5m'] == 'distribution',
-                    row['15m'] == 'distribution',
-                    row['4h'] == 'distribution',
-                    row['1D'] == 'distribution',
-                    row['1W'] == 'distribution'
-                ])
+        # Always create bullish/bearish columns for filtering
+        def is_fully_bullish(row):
+            return all([
+                row['5m'] == 'accumulation',
+                row['15m'] == 'accumulation',
+                row['4h'] == 'accumulation',
+                row['1D'] == 'accumulation',
+                row['1W'] == 'accumulation'
+            ])
+        
+        def is_fully_bearish(row):
+            return all([
+                row['5m'] == 'distribution',
+                row['15m'] == 'distribution',
+                row['4h'] == 'distribution',
+                row['1D'] == 'distribution',
+                row['1W'] == 'distribution'
+            ])
+        
+        df_results['_fully_bullish'] = df_results.apply(is_fully_bullish, axis=1)
+        df_results['_fully_bearish'] = df_results.apply(is_fully_bearish, axis=1)
+        
+        # Determine sorting strategy based on selections
+        has_bullish = 'Fully Bullish' in sort_by_list
+        has_bearish = 'Fully Bearish' in sort_by_list
+        has_largest_mover = 'Largest Mover' in sort_by_list
+        
+        if has_bullish and has_bearish:
+            # Both checked: Create priority column (bullish=2, bearish=1, neither=0)
+            def get_priority(row):
+                if row['_fully_bullish']:
+                    return 2  # Bullish first
+                elif row['_fully_bearish']:
+                    return 1  # Bearish second
+                else:
+                    return 0  # Everything else last
             
-            df_results['is_fully_bearish'] = df_results.apply(is_fully_bearish, axis=1)
-            df_results = df_results.sort_values('is_fully_bearish', ascending=False)
-            df_results = df_results.drop('is_fully_bearish', axis=1)
+            df_results['_priority'] = df_results.apply(get_priority, axis=1)
+            # Sort by priority (descending), then by largest mover (descending)
+            df_results = df_results.sort_values(['_priority', '_abs_change'], ascending=[False, False])
+        
+        elif has_bullish and has_largest_mover:
+            # Bullish + Largest Mover: Bullish first, then sort by size
+            df_results = df_results.sort_values(['_fully_bullish', '_abs_change'], ascending=[False, False])
+        
+        elif has_bearish and has_largest_mover:
+            # Bearish + Largest Mover: Bearish first, then sort by size
+            df_results = df_results.sort_values(['_fully_bearish', '_abs_change'], ascending=[False, False])
+        
+        elif has_bullish:
+            # Only Bullish: Bullish first
+            df_results = df_results.sort_values('_fully_bullish', ascending=False)
+        
+        elif has_bearish:
+            # Only Bearish: Bearish first
+            df_results = df_results.sort_values('_fully_bearish', ascending=False)
+        
+        else:
+            # Default or only Largest Mover: sort by largest mover
+            df_results = df_results.sort_values('_abs_change', ascending=False)
+        
+        # Clean up helper columns
+        helper_cols = ['_abs_change', '_fully_bullish', '_fully_bearish', '_priority']
+        df_results = df_results.drop(columns=[col for col in helper_cols if col in df_results.columns])
         
         # Highlight strong signals
         st.subheader("Market Overview")
@@ -584,7 +722,7 @@ def main():
         
         display_df['Sentiment_Display'] = display_df.apply(format_sentiment, axis=1)
         
-        # Format candle change column with color indicators
+        # Format first candle change column with color indicators
         stored_tf = st.session_state.get('stored_change_timeframe', '1D')
         stored_period = st.session_state.get('stored_change_period', 28)
         change_col_name = f'Change_{stored_tf}'
@@ -603,29 +741,61 @@ def main():
             display_df[f'Change_Display'] = display_df[change_col_name].apply(format_change)
             # Drop raw change column
             display_df = display_df.drop([change_col_name], axis=1)
-            # Rename for display
-            change_label = f'Δ% ({stored_tf}, {stored_period}c)'
+            # Rename for display with new format
+            change_label = f'{stored_period} Candle Change Absolute'
             display_df = display_df.rename(columns={'Change_Display': change_label})
         
-        # Drop internal columns
-        display_df = display_df.drop(['Strength', 'Sentiment', 'Sentiment_Text', 'Sentiment_Value'], axis=1)
+        # Format second candle change column with color indicators
+        stored_tf_2 = st.session_state.get('stored_change_timeframe_2', '1D')
+        stored_period_2 = st.session_state.get('stored_change_period_2', 2)
+        change_col_name_2 = f'Change2_{stored_tf_2}'
+        
+        if change_col_name_2 in display_df.columns:
+            def format_change_2(val):
+                if val is None or pd.isna(val):
+                    return "-"
+                elif val > 0:
+                    return f"🟢 +{val}%"
+                elif val < 0:
+                    return f"🔴 {val}%"
+                else:
+                    return f"⚪ {val}%"
+            
+            display_df[f'Change2_Display'] = display_df[change_col_name_2].apply(format_change_2)
+            # Drop raw change column
+            display_df = display_df.drop([change_col_name_2], axis=1)
+            # Rename for display with new format
+            change_label_2 = f'{stored_period_2} Candle Change Absolute'
+            display_df = display_df.rename(columns={'Change2_Display': change_label_2})
+        
+        # Drop internal columns (including Alignment)
+        cols_to_drop = ['Strength', 'Sentiment', 'Sentiment_Text', 'Sentiment_Value', 'Alignment']
+        display_df = display_df.drop([col for col in cols_to_drop if col in display_df.columns], axis=1)
         
         # Rename for display
         display_df = display_df.rename(columns={'Sentiment_Display': 'Sentiment'})
         
-        # Reorder columns to put change column after Sentiment
+        # Reorder columns: Pair, Signal, timeframes, change columns, then Sentiment at the end
         cols = display_df.columns.tolist()
-        # Find sentiment column position
-        sent_idx = cols.index('Sentiment')
-        # Find change column (it will have the Δ% prefix)
-        change_cols = [c for c in cols if c.startswith('Δ%')]
-        if change_cols:
-            change_col = change_cols[0]
-            # Remove change column from current position
+        
+        # Find the candle change columns
+        change_cols = [c for c in cols if 'Candle Change Absolute' in c]
+        
+        # Remove Sentiment and change columns from their current positions
+        cols.remove('Sentiment')
+        for change_col in change_cols:
             cols.remove(change_col)
-            # Insert after sentiment
-            cols.insert(sent_idx + 1, change_col)
-            display_df = display_df[cols]
+        
+        # Insert change columns after timeframe columns (before Sentiment)
+        # The order should be: Pair, Signal, 5m, 15m, 4h, 1D, 1W, Change1, Change2, Sentiment
+        insert_position = len(cols)  # After all timeframe columns
+        for i, change_col in enumerate(change_cols):
+            cols.insert(insert_position + i, change_col)
+        
+        # Add Sentiment at the very end
+        cols.append('Sentiment')
+        
+        display_df = display_df[cols]
         
         # Style the dataframe
         st.dataframe(
@@ -636,7 +806,7 @@ def main():
         )
         
         # Show timestamp and analysis info
-        st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Candle Analysis: {stored_tf} timeframe, {stored_period} candles back")
+        st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Analysis #1: {stored_tf}/{stored_period}c | Analysis #2: {stored_tf_2}/{stored_period_2}c")
         
         # Trade recommendations
         st.markdown("---")
