@@ -72,59 +72,113 @@ def calculate_ema(data, period):
     """Calculate EMA for given period"""
     return data['Close'].ewm(span=period, adjust=False).mean()
 
+def calculate_sentiment(df, max_diff=10.0):
+    """
+    Multi-Indicator Sentiment based on 20/50 EMA
+    Combines Trend Points (50%) and EMA Distance (50%) for composite score
+    Returns: sentiment_pct (0-100), sentiment_text, ema20, ema50
+    """
+    if df.empty or len(df) < 50:
+        return None, None, None, None
+    
+    # Calculate 20 and 50 EMAs (matching Pine Script)
+    ema20 = df['Close'].ewm(span=20, adjust=False).mean()
+    ema50 = df['Close'].ewm(span=50, adjust=False).mean()
+    
+    # Get latest values
+    last_close = df['Close'].iloc[-1]
+    last_ema20 = ema20.iloc[-1]
+    last_ema50 = ema50.iloc[-1]
+    
+    # ========== COMPONENT 1: TREND POINTS ==========
+    trend_points = 0.0
+    
+    # Close above short EMA
+    if last_close > last_ema20:
+        trend_points += 33.33
+    
+    # Close above long EMA
+    if last_close > last_ema50:
+        trend_points += 33.33
+    
+    # Short EMA above long EMA
+    if last_ema20 > last_ema50:
+        trend_points += 33.34
+    
+    # ========== COMPONENT 2: EMA DISTANCE ==========
+    # Calculate percentage difference between EMAs
+    diff = (last_ema20 - last_ema50) / last_ema50 * 100
+    
+    # Convert to 0-100 scale (centered at 50)
+    ema_distance_raw = 50 + (diff / max_diff) * 50
+    ema_distance = max(0, min(100, round(ema_distance_raw)))
+    
+    # ========== COMPOSITE SENTIMENT ==========
+    # 50% trend points + 50% EMA distance
+    composite = (trend_points * 0.50) + (ema_distance * 0.50)
+    sentiment_pct = round(composite)
+    
+    # Determine sentiment text
+    if sentiment_pct >= 70:
+        sentiment_text = "Strong Bull"
+    elif sentiment_pct >= 55:
+        sentiment_text = "Bullish"
+    elif sentiment_pct >= 45:
+        sentiment_text = "Neutral"
+    elif sentiment_pct >= 30:
+        sentiment_text = "Bearish"
+    else:
+        sentiment_text = "Strong Bear"
+    
+    return sentiment_pct, sentiment_text, last_ema20, last_ema50
+
 def get_market_state(df):
     """
-    Determine market state based on EMA positions using state transitions
-    This implements the EXACT Pine Script logic with state persistence
+    Determine market state based on EMA positions
+    
+    SIMPLIFIED LOGIC:
+    - ACCUMULATION: Price above ALL EMAs (10, 20, 50)
+    - DISTRIBUTION: Price below ALL EMAs (10, 20, 50)
+    - RE-ACCUMULATION: Price above 50 but not above all (bullish bias, pullback)
+    - RE-DISTRIBUTION: Price below 50 but not below all (bearish bias, rally)
+    
     Returns: 'accumulation', 're-accumulation', 'distribution', 're-distribution'
     """
     if df.empty or len(df) < 50:
         return None
     
-    # Calculate EMAs for entire dataframe
+    # Calculate EMAs
     ema10 = df['Close'].ewm(span=10, adjust=False).mean()
     ema20 = df['Close'].ewm(span=20, adjust=False).mean()
     ema50 = df['Close'].ewm(span=50, adjust=False).mean()
     
-    # Start with accumulation state
-    state = "accumulation"
+    # Get latest values
+    close = df['Close'].iloc[-1]
+    last_ema10 = ema10.iloc[-1]
+    last_ema20 = ema20.iloc[-1]
+    last_ema50 = ema50.iloc[-1]
     
-    # Iterate through each bar to track state transitions (like Pine Script's var)
-    for i in range(len(df)):
-        close = df['Close'].iloc[i]
-        e10 = ema10.iloc[i]
-        e20 = ema20.iloc[i]
-        e50 = ema50.iloc[i]
-        
-        # State transition logic - EXACT Pine Script implementation
-        if state == "accumulation":
-            # In accumulation, if price drops to/below 10 EMA → re-acc
-            if close <= e10:
-                state = "re-accumulation"
-        
-        elif state == "re-accumulation":
-            # In re-acc, if price flushes below 50 EMA → distribution
-            if close < e50:
-                state = "distribution"
-            # If price recovers above 10 EMA → back to accumulation
-            elif close > e10:
-                state = "accumulation"
-        
-        elif state == "distribution":
-            # In distribution, if price rises to/above 20 EMA → re-dis
-            if close >= e20:
-                state = "re-distribution"
-        
-        elif state == "re-distribution":
-            # In re-dis, if price flushes above 50 EMA → accumulation
-            if close > e50:
-                state = "accumulation"
-            # If price falls back below 20 EMA → back to distribution
-            elif close < e20:
-                state = "distribution"
+    # Determine position relative to each EMA
+    above_10 = close > last_ema10
+    above_20 = close > last_ema20
+    above_50 = close > last_ema50
     
-    # Return the final state after processing all bars
-    return state
+    # ACCUMULATION: Above ALL EMAs = strong uptrend
+    if above_10 and above_20 and above_50:
+        return "accumulation"
+    
+    # DISTRIBUTION: Below ALL EMAs = strong downtrend
+    if not above_10 and not above_20 and not above_50:
+        return "distribution"
+    
+    # Mixed states - check dominant bias using EMA50
+    # If above 50 EMA = bullish bias (even if below some shorter EMAs)
+    if above_50:
+        return "re-accumulation"
+    
+    # If below 50 EMA = bearish bias (even if above some shorter EMAs)
+    else:
+        return "re-distribution"
 
 def fetch_data(symbol, interval, period='5d'):
     """Fetch OHLC data from yfinance with error handling"""
@@ -181,6 +235,10 @@ def analyze_pair(pair_name, symbol):
         state = get_market_state(df)
         states[tf_name] = state
     
+    # Calculate sentiment from 1D timeframe only
+    df_daily = fetch_data(symbol, '1d')
+    sentiment_pct, sentiment_text, ema20, ema50 = calculate_sentiment(df_daily)
+    
     # Count alignments
     bull_count = sum(1 for s in states.values() if s and is_bullish(s))
     bear_count = sum(1 for s in states.values() if s and is_bearish(s))
@@ -211,7 +269,10 @@ def analyze_pair(pair_name, symbol):
         '4h': states.get('4h', '-'),
         '1D': states.get('1D', '-'),
         '1W': states.get('1W', '-'),
-        'Alignment': f"{max(bull_count, bear_count)}/5"
+        'Alignment': f"{max(bull_count, bear_count)}/5",
+        'Sentiment': f"{sentiment_pct}%" if sentiment_pct is not None else "-",
+        'Sentiment_Text': sentiment_text if sentiment_text else "-",
+        'Sentiment_Value': sentiment_pct if sentiment_pct is not None else 0
     }
 
 def get_state_emoji(state):
@@ -228,84 +289,165 @@ def get_state_emoji(state):
         return '⚪ -'
 
 def main():
-    st.title("🌞 Solar Finance - FX Multi-Timeframe Screener")
+    st.title("Solar Finance - FX Multi-Timeframe Screener")
     st.markdown("**Real-time market state analysis across 5m, 15m, 4h, 1D, and 1W timeframes**")
     
-    # Sidebar
-    st.sidebar.header("Settings")
+    # Top navigation bar with buttons
+    top_col1, top_col2, top_col3 = st.columns([1, 2, 1])
     
-    # Pair selection
-    st.sidebar.subheader("📊 Major Pairs")
-    selected_pairs = {}
-    selected_pairs['EUR/USD'] = st.sidebar.checkbox('EUR/USD', value=True)
-    selected_pairs['GBP/USD'] = st.sidebar.checkbox('GBP/USD', value=True)
-    selected_pairs['USD/JPY'] = st.sidebar.checkbox('USD/JPY', value=True)
-    selected_pairs['USD/CHF'] = st.sidebar.checkbox('USD/CHF', value=True)
-    selected_pairs['AUD/USD'] = st.sidebar.checkbox('AUD/USD', value=True)
-    selected_pairs['USD/CAD'] = st.sidebar.checkbox('USD/CAD', value=True)
-    selected_pairs['NZD/USD'] = st.sidebar.checkbox('NZD/USD', value=True)
+    with top_col1:
+        button_col1, button_col2 = st.columns(2)
+        with button_col1:
+            # How to Use button (list icon)
+            if st.button("📋 How to Use", key="help_button"):
+                st.session_state.help_visible = not st.session_state.get('help_visible', False)
+        
+        with button_col2:
+            # Settings button (gear icon) - next to How to Use
+            if st.button("⚙️ Settings", key="settings_button"):
+                st.session_state.settings_visible = not st.session_state.get('settings_visible', False)
     
-    st.sidebar.subheader("📈 Minor Pairs")
-    selected_pairs['EUR/GBP'] = st.sidebar.checkbox('EUR/GBP', value=False)
-    selected_pairs['EUR/JPY'] = st.sidebar.checkbox('EUR/JPY', value=False)
-    selected_pairs['GBP/JPY'] = st.sidebar.checkbox('GBP/JPY', value=False)
-    selected_pairs['EUR/AUD'] = st.sidebar.checkbox('EUR/AUD', value=False)
-    selected_pairs['EUR/CAD'] = st.sidebar.checkbox('EUR/CAD', value=False)
-    selected_pairs['AUD/JPY'] = st.sidebar.checkbox('AUD/JPY', value=False)
-    selected_pairs['GBP/AUD'] = st.sidebar.checkbox('GBP/AUD', value=False)
+    with top_col3:
+        # Scan button (top right)
+        selected_pairs_list = st.session_state.get('selected_markets', [])
+        scan_disabled = len(selected_pairs_list) == 0
+        refresh_button = st.button("🔄 Scan Markets", type="primary", disabled=scan_disabled, key="scan_top")
+        if scan_disabled:
+            st.caption("Select markets from sidebar")
     
-    st.sidebar.subheader("💹 Indices")
-    selected_pairs['GER40'] = st.sidebar.checkbox('GER40 (DAX)', value=False)
-    selected_pairs['US100'] = st.sidebar.checkbox('US100 (Nasdaq)', value=False)
+    # Show help modal if toggled
+    if st.session_state.get('help_visible', False):
+        with st.expander("FAQ", expanded=True):
+            st.markdown("""
+            **Usage Tips:**
+            - Select Markets: Use the dropdown in sidebar to choose pairs
+            - Refresh wisely: Each refresh makes 5+ calls per pair
+            - Rate limit: If data stops loading, wait 15-30 minutes
+            - Best times: Refresh during market opens (London/NY)
+            
+            **States:**
+            - ACC = Accumulation (Strong Buy)
+            - R-ACC = Re-Accumulation (Buy Dip)
+            - DIS = Distribution (Strong Sell)
+            - R-DIS = Re-Distribution (Sell Rally)
+            
+            **Signals:**
+            - 5/5 = PERFECT alignment - Trade these!
+            - 4/5 = Good alignment - Watch closely
+            - Mixed = Below 4/5 - Stay out!
+            """)
     
-    st.sidebar.subheader("🥇 Metals")
-    selected_pairs['XAUUSD'] = st.sidebar.checkbox('XAUUSD (Gold)', value=False)
-    selected_pairs['XAGUSD'] = st.sidebar.checkbox('XAGUSD (Silver)', value=False)
+    # Show settings modal if toggled
+    if st.session_state.get('settings_visible', False):
+        with st.expander("Screener Settings", expanded=True):
+            st.subheader("Candle Change Analysis")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                change_timeframe = st.selectbox(
+                    "Timeframe for % Change:",
+                    options=['5m', '15m', '4h', '1D', '1W'],
+                    index=3,
+                    help="Calculate absolute % change over this timeframe",
+                    key="change_tf_selector"
+                )
+            
+            with col2:
+                change_period = st.number_input(
+                    "Number of Candles:",
+                    min_value=1,
+                    max_value=500,
+                    value=30,
+                    step=1,
+                    help="Calculate % change over this many candles back",
+                    key="change_period_input"
+                )
+            
+            st.markdown("---")
+            st.subheader("Sort Results By")
+            
+            sort_by = st.radio(
+                "Choose sorting method:",
+                options=['Largest Mover', 'Fully Bullish', 'Fully Bearish'],
+                index=0,
+                help="Largest Mover: Highest % change | Fully Bullish: All timeframes ACC | Fully Bearish: All timeframes DIS",
+                key="sort_by_selector"
+            )
+            
+            # Store in different session state keys
+            st.session_state.stored_change_timeframe = change_timeframe
+            st.session_state.stored_change_period = change_period
+            st.session_state.stored_sort_by = sort_by
+    else:
+        # Set defaults if settings not shown
+        if 'stored_change_timeframe' not in st.session_state:
+            st.session_state.stored_change_timeframe = '1D'
+        if 'stored_change_period' not in st.session_state:
+            st.session_state.stored_change_period = 30
+        if 'stored_sort_by' not in st.session_state:
+            st.session_state.stored_sort_by = 'Largest Mover'
     
-    st.sidebar.subheader("₿ Crypto")
-    selected_pairs['BTCUSD'] = st.sidebar.checkbox('BTCUSD (Bitcoin)', value=False)
+    # Sidebar - Market Selection
+    st.sidebar.header("Select Markets")
     
-    # Auto-refresh
-    auto_refresh = st.sidebar.checkbox("Auto-refresh (30s)", value=False)
-    refresh_button = st.sidebar.button("🔄 Refresh Now")
+    # All available markets (no search)
+    all_markets = list(FX_PAIRS.keys())
+    filtered_markets = all_markets
     
-    # Rate limit warning
-    if auto_refresh:
-        st.sidebar.warning("⚠️ Auto-refresh enabled. Too many refreshes may trigger rate limits. Use sparingly!")
+    # Select All / Deselect All buttons
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("Select All", key="select_all"):
+            st.session_state.selected_markets = filtered_markets.copy()
+            st.rerun()
+    with col2:
+        if st.button("Deselect All", key="deselect_all"):
+            st.session_state.selected_markets = []
+            st.rerun()
     
-    # Info section
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("⚡ Usage Tips")
-    st.sidebar.markdown("""
-    - **Refresh wisely**: Each refresh makes 5 calls per pair
-    - **Select fewer pairs**: Reduce load by unchecking pairs you don't trade
-    - **Rate limit**: If data stops loading, wait 15-30 minutes
-    - **Best times**: Refresh during market opens (London/NY)
-    """)
+    # Market selection with multiselect
+    if 'selected_markets' not in st.session_state:
+        st.session_state.selected_markets = []
     
-    # Info section
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Legend")
-    st.sidebar.markdown("""
-    **States:**
-    - 🟩 ACC = Accumulation (Strong Buy)
-    - 🟢 R-ACC = Re-Accumulation (Buy Dip)
-    - 🟥 DIS = Distribution (Strong Sell)
-    - 🔴 R-DIS = Re-Distribution (Sell Rally)
+    selected_markets = st.sidebar.multiselect(
+        f"Markets ({len(filtered_markets)} available):",
+        options=filtered_markets,
+        default=st.session_state.selected_markets,
+        key="market_selector"
+    )
     
-    **Signals:**
-    - 🟢 5/5 = PERFECT alignment - Trade these!
-    - 🟡 4/5 = Good alignment - Watch closely
-    - ⚪ Mixed = Below 4/5 - Stay out!
-    """)
+    # Update session state
+    st.session_state.selected_markets = selected_markets
+    selected_pairs_list = selected_markets
     
-    # Main content
-    if refresh_button or auto_refresh or 'results' not in st.session_state:
+    # If no markets selected, show welcome screen
+    if len(selected_pairs_list) == 0 and 'results' not in st.session_state:
+        st.markdown("""
+        ### How to use this screener:
+        1. **Select Markets**: Choose pairs/instruments from the sidebar
+        2. **Configure Settings**: Click the gear icon to adjust candle analysis settings
+        3. **Click Scan**: Press 'Scan Markets' in the top right to analyze your selections
+        4. **View Results**: Review multi-timeframe alignment and sentiment
+        
+        ### Available Markets:
+        - **Major FX Pairs**: EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, USD/CAD, NZD/USD
+        - **Minor FX Pairs**: EUR/GBP, EUR/JPY, GBP/JPY, EUR/AUD, EUR/CAD, AUD/JPY, GBP/AUD
+        - **Indices**: GER40 (DAX), US100 (Nasdaq)
+        - **Metals**: XAUUSD (Gold), XAGUSD (Silver)
+        - **Crypto**: BTCUSD (Bitcoin)
+        """)
+        return
+    
+    # Main content - Scan logic
+    if refresh_button or ('results' not in st.session_state and len(selected_pairs_list) > 0):
+        change_timeframe = st.session_state.get('stored_change_timeframe', '1D')
+        change_period = st.session_state.get('stored_change_period', 28)
+        
         with st.spinner('Analyzing markets... This may take 30-60 seconds.'):
             results = []
             
             # Get list of pairs to analyze
-            pairs_to_analyze = [(name, symbol) for name, symbol in FX_PAIRS.items() if selected_pairs.get(name, False)]
+            pairs_to_analyze = [(name, FX_PAIRS[name]) for name in selected_pairs_list]
             
             # Progress bar
             progress_bar = st.progress(0)
@@ -315,10 +457,23 @@ def main():
                 status_text.text(f"Analyzing {pair_name}... ({idx + 1}/{len(pairs_to_analyze)})")
                 try:
                     result = analyze_pair(pair_name, symbol)
+                    
+                    # Add candle change analysis
+                    tf_interval = TIMEFRAMES.get(change_timeframe, '1d')
+                    df_change = fetch_data(symbol, tf_interval)
+                    
+                    if not df_change.empty and len(df_change) > change_period:
+                        current_price = df_change['Close'].iloc[-1]
+                        past_price = df_change['Close'].iloc[-(change_period + 1)]
+                        price_change_pct = ((current_price - past_price) / past_price) * 100
+                        result[f'Change_{change_timeframe}'] = round(price_change_pct, 2)
+                    else:
+                        result[f'Change_{change_timeframe}'] = None
+                    
                     results.append(result)
                 except Exception as e:
                     # Skip pairs that fail
-                    st.warning(f"⚠️ Could not analyze {pair_name} - skipping")
+                    st.warning(f"Could not analyze {pair_name} - skipping")
                 progress_bar.progress((idx + 1) / len(pairs_to_analyze))
                 # Add delay between pairs to avoid rate limiting
                 time.sleep(0.5)
@@ -326,16 +481,59 @@ def main():
             progress_bar.empty()
             status_text.empty()
             st.session_state.results = results
+            st.session_state.stored_change_timeframe = change_timeframe
+            st.session_state.stored_change_period = change_period
     
     # Display results
     if 'results' in st.session_state and st.session_state.results:
         df_results = pd.DataFrame(st.session_state.results)
         
-        # Sort by strength (strongest signals first)
-        df_results = df_results.sort_values('Strength', key=abs, ascending=False)
+        # Get sort preference
+        sort_by = st.session_state.get('stored_sort_by', 'Largest Mover')
+        stored_tf = st.session_state.get('stored_change_timeframe', '1D')
+        change_col_name = f'Change_{stored_tf}'
+        
+        # Sort based on user preference
+        if sort_by == 'Largest Mover':
+            # Sort by absolute % change (largest movers first)
+            if change_col_name in df_results.columns:
+                df_results = df_results.sort_values(change_col_name, key=abs, ascending=False)
+            else:
+                # Fallback to strength sorting
+                df_results = df_results.sort_values('Strength', key=abs, ascending=False)
+        
+        elif sort_by == 'Fully Bullish':
+            # Filter and sort: All timeframes ACC (accumulation)
+            def is_fully_bullish(row):
+                return all([
+                    row['5m'] == 'accumulation',
+                    row['15m'] == 'accumulation',
+                    row['4h'] == 'accumulation',
+                    row['1D'] == 'accumulation',
+                    row['1W'] == 'accumulation'
+                ])
+            
+            df_results['is_fully_bullish'] = df_results.apply(is_fully_bullish, axis=1)
+            df_results = df_results.sort_values('is_fully_bullish', ascending=False)
+            df_results = df_results.drop('is_fully_bullish', axis=1)
+        
+        elif sort_by == 'Fully Bearish':
+            # Filter and sort: All timeframes DIS (distribution)
+            def is_fully_bearish(row):
+                return all([
+                    row['5m'] == 'distribution',
+                    row['15m'] == 'distribution',
+                    row['4h'] == 'distribution',
+                    row['1D'] == 'distribution',
+                    row['1W'] == 'distribution'
+                ])
+            
+            df_results['is_fully_bearish'] = df_results.apply(is_fully_bearish, axis=1)
+            df_results = df_results.sort_values('is_fully_bearish', ascending=False)
+            df_results = df_results.drop('is_fully_bearish', axis=1)
         
         # Highlight strong signals
-        st.subheader("📊 Market Overview")
+        st.subheader("Market Overview")
         
         # Show summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -346,18 +544,18 @@ def main():
         mixed = len([r for r in st.session_state.results if abs(r['Strength']) < 4])
         
         with col1:
-            st.metric("🟢 Perfect Longs (5/5)", perfect_longs)
+            st.metric("Perfect Longs (5/5)", perfect_longs)
         with col2:
-            st.metric("🔴 Perfect Shorts (5/5)", perfect_shorts)
+            st.metric("Perfect Shorts (5/5)", perfect_shorts)
         with col3:
-            st.metric("🟡 Watch List (4/5)", watch_list)
+            st.metric("Watch List (4/5)", watch_list)
         with col4:
-            st.metric("⚪ Mixed (<4/5)", mixed)
+            st.metric("Mixed (<4/5)", mixed)
         
         st.markdown("---")
         
         # Display detailed table
-        st.subheader("📈 Detailed Analysis")
+        st.subheader("Detailed Analysis")
         
         # Format the dataframe for display
         display_df = df_results.copy()
@@ -367,8 +565,67 @@ def main():
         display_df['1D'] = display_df['1D'].apply(get_state_emoji)
         display_df['1W'] = display_df['1W'].apply(get_state_emoji)
         
-        # Drop strength column (internal use only)
-        display_df = display_df.drop('Strength', axis=1)
+        # Format sentiment column with emoji
+        def format_sentiment(row):
+            sent_text = row['Sentiment_Text']
+            sent_pct = row['Sentiment']
+            if sent_text == "Strong Bull":
+                return f"🟢🟢 {sent_pct}"
+            elif sent_text == "Bullish":
+                return f"🟢 {sent_pct}"
+            elif sent_text == "Neutral":
+                return f"⚪ {sent_pct}"
+            elif sent_text == "Bearish":
+                return f"🔴 {sent_pct}"
+            elif sent_text == "Strong Bear":
+                return f"🔴🔴 {sent_pct}"
+            else:
+                return f"⚪ {sent_pct}"
+        
+        display_df['Sentiment_Display'] = display_df.apply(format_sentiment, axis=1)
+        
+        # Format candle change column with color indicators
+        stored_tf = st.session_state.get('stored_change_timeframe', '1D')
+        stored_period = st.session_state.get('stored_change_period', 28)
+        change_col_name = f'Change_{stored_tf}'
+        
+        if change_col_name in display_df.columns:
+            def format_change(val):
+                if val is None or pd.isna(val):
+                    return "-"
+                elif val > 0:
+                    return f"🟢 +{val}%"
+                elif val < 0:
+                    return f"🔴 {val}%"
+                else:
+                    return f"⚪ {val}%"
+            
+            display_df[f'Change_Display'] = display_df[change_col_name].apply(format_change)
+            # Drop raw change column
+            display_df = display_df.drop([change_col_name], axis=1)
+            # Rename for display
+            change_label = f'Δ% ({stored_tf}, {stored_period}c)'
+            display_df = display_df.rename(columns={'Change_Display': change_label})
+        
+        # Drop internal columns
+        display_df = display_df.drop(['Strength', 'Sentiment', 'Sentiment_Text', 'Sentiment_Value'], axis=1)
+        
+        # Rename for display
+        display_df = display_df.rename(columns={'Sentiment_Display': 'Sentiment'})
+        
+        # Reorder columns to put change column after Sentiment
+        cols = display_df.columns.tolist()
+        # Find sentiment column position
+        sent_idx = cols.index('Sentiment')
+        # Find change column (it will have the Δ% prefix)
+        change_cols = [c for c in cols if c.startswith('Δ%')]
+        if change_cols:
+            change_col = change_cols[0]
+            # Remove change column from current position
+            cols.remove(change_col)
+            # Insert after sentiment
+            cols.insert(sent_idx + 1, change_col)
+            display_df = display_df[cols]
         
         # Style the dataframe
         st.dataframe(
@@ -378,200 +635,36 @@ def main():
             height=400
         )
         
-        # Show timestamp
-        st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # Show timestamp and analysis info
+        st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Candle Analysis: {stored_tf} timeframe, {stored_period} candles back")
         
         # Trade recommendations
         st.markdown("---")
-        st.subheader("💡 Trade Recommendations")
+        st.subheader("Trade Recommendations")
         
         # Only show 5/5 perfect alignments
         perfect_signals = [r for r in st.session_state.results if abs(r['Strength']) == 5]
         
         if perfect_signals:
-            st.success("🎯 **PERFECT SETUPS DETECTED** - All 5 timeframes aligned!")
+            st.success("PERFECT SETUPS DETECTED - All 5 timeframes aligned!")
             for result in perfect_signals:
                 if result['Strength'] > 0:
-                    st.success(f"**{result['Pair']}** - {result['Signal']} | 🟢 Look for LONG entries on pullbacks to support")
+                    st.success(f"**{result['Pair']}** - {result['Signal']} | Look for LONG entries on pullbacks to support")
                 else:
-                    st.error(f"**{result['Pair']}** - {result['Signal']} | 🔴 Look for SHORT entries on rallies to resistance")
+                    st.error(f"**{result['Pair']}** - {result['Signal']} | Look for SHORT entries on rallies to resistance")
         else:
-            st.info("⏳ No perfect 5/5 alignment setups at the moment. Wait for all timeframes to align before trading.")
+            st.info("No perfect 5/5 alignment setups at the moment. Wait for all timeframes to align before trading.")
             
             # Show 4/5 as "watch list"
             good_signals = [r for r in st.session_state.results if abs(r['Strength']) == 4]
             if good_signals:
                 st.markdown("---")
-                st.markdown("**📋 Watch List (4/5 alignment - close but not perfect):**")
+                st.markdown("**Watch List (4/5 alignment - close but not perfect):**")
                 for result in good_signals:
                     if result['Strength'] > 0:
                         st.markdown(f"- {result['Pair']} - {result['Signal']} - Watch for 5th timeframe to align bullish")
                     else:
                         st.markdown(f"- {result['Pair']} - {result['Signal']} - Watch for 5th timeframe to align bearish")
-    
-    # Auto-refresh logic
-    if auto_refresh:
-        time.sleep(30)
-        st.rerun()
 
 if __name__ == "__main__":
     main()
-    
-    # === CANDLE LOOKBACK ANALYZER ===
-    st.markdown("---")
-    st.header("📊 Candle Lookback Analyzer")
-    st.markdown("**Analyze price movement over a specific number of candles**")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        lookback_pair = st.selectbox(
-            "Select Pair/Instrument:",
-            options=list(FX_PAIRS.keys()),
-            key="lookback_pair"
-        )
-    
-    with col2:
-        lookback_timeframe = st.selectbox(
-            "Select Timeframe:",
-            options=['5m', '15m', '4h', '1D', '1W'],
-            key="lookback_tf"
-        )
-    
-    with col3:
-        lookback_candles = st.number_input(
-            "Number of Candles Back:",
-            min_value=1,
-            max_value=500,
-            value=10,
-            step=1,
-            key="lookback_candles"
-        )
-    
-    analyze_button = st.button("🔍 Analyze Movement", key="analyze_lookback")
-    
-    if analyze_button:
-        with st.spinner(f'Analyzing {lookback_pair} on {lookback_timeframe}...'):
-            try:
-                # Get the yfinance symbol
-                symbol = FX_PAIRS[lookback_pair]
-                
-                # Map timeframe to yfinance interval
-                tf_map = {
-                    '5m': '5m',
-                    '15m': '15m',
-                    '4h': '1h',
-                    '1D': '1d',
-                    '1W': '1wk'
-                }
-                interval = tf_map[lookback_timeframe]
-                
-                # Fetch data
-                df = fetch_data(symbol, interval)
-                
-                if df.empty or len(df) < lookback_candles:
-                    st.error(f"❌ Not enough data. Only {len(df)} candles available.")
-                else:
-                    # Calculate price change
-                    current_price = df['Close'].iloc[-1]
-                    past_price = df['Close'].iloc[-(lookback_candles + 1)]
-                    
-                    price_change = current_price - past_price
-                    price_change_pct = (price_change / past_price) * 100
-                    
-                    # Get high and low during period
-                    period_high = df['High'].iloc[-lookback_candles:].max()
-                    period_low = df['Low'].iloc[-lookback_candles:].min()
-                    range_pct = ((period_high - period_low) / period_low) * 100
-                    
-                    # Display results in cards
-                    st.success(f"✅ Analysis Complete for {lookback_pair}")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric(
-                            label="Price Change",
-                            value=f"{price_change_pct:.2f}%",
-                            delta=f"{price_change:.5f}" if abs(price_change) < 1 else f"{price_change:.2f}"
-                        )
-                    
-                    with col2:
-                        st.metric(
-                            label="Start Price",
-                            value=f"{past_price:.5f}" if past_price < 10 else f"{past_price:.2f}"
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            label="Current Price",
-                            value=f"{current_price:.5f}" if current_price < 10 else f"{current_price:.2f}"
-                        )
-                    
-                    with col4:
-                        st.metric(
-                            label="Range (H-L)",
-                            value=f"{range_pct:.2f}%"
-                        )
-                    
-                    # Additional details
-                    st.markdown("---")
-                    st.subheader("📈 Detailed Movement")
-                    
-                    detail_col1, detail_col2 = st.columns(2)
-                    
-                    with detail_col1:
-                        # Format prices properly
-                        high_str = f"{period_high:.5f}" if period_high < 10 else f"{period_high:.2f}"
-                        low_str = f"{period_low:.5f}" if period_low < 10 else f"{period_low:.2f}"
-                        
-                        st.markdown(f"""
-                        **Period Analysis:**
-                        - **Timeframe:** {lookback_timeframe}
-                        - **Candles Analyzed:** {lookback_candles}
-                        - **Period High:** {high_str}
-                        - **Period Low:** {low_str}
-                        - **Total Range:** {range_pct:.2f}%
-                        """)
-                    
-                    with detail_col2:
-                        # Determine trend
-                        if price_change_pct > 0.5:
-                            trend = "🟢 Bullish"
-                            trend_desc = "Price is moving upward"
-                        elif price_change_pct < -0.5:
-                            trend = "🔴 Bearish"
-                            trend_desc = "Price is moving downward"
-                        else:
-                            trend = "⚪ Neutral"
-                            trend_desc = "Price is range-bound"
-                        
-                        # Where is current price in the range?
-                        price_position = ((current_price - period_low) / (period_high - period_low)) * 100 if period_high != period_low else 50
-                        
-                        st.markdown(f"""
-                        **Trend Assessment:**
-                        - **Direction:** {trend}
-                        - **Interpretation:** {trend_desc}
-                        - **Price Position:** {price_position:.1f}% of range
-                        - **From Low:** {((current_price - period_low) / period_low * 100):.2f}%
-                        - **From High:** {((current_price - period_high) / period_high * 100):.2f}%
-                        """)
-                    
-                    # Visual indicator
-                    st.markdown("---")
-                    st.markdown("**Price Position in Range:**")
-                    
-                    # Create a simple progress bar to show position
-                    position_normalized = price_position / 100
-                    st.progress(position_normalized)
-                    
-                    if price_position > 80:
-                        st.info("💡 Price near range high - potential resistance")
-                    elif price_position < 20:
-                        st.info("💡 Price near range low - potential support")
-                    else:
-                        st.info("💡 Price in middle of range")
-                    
-            except Exception as e:
-                st.error(f"❌ Error analyzing {lookback_pair}: {str(e)}")
