@@ -198,7 +198,9 @@ class MainWindow(QMainWindow):
         return layout
     
     def create_sidebar(self):
-        """Create sidebar for market selection"""
+        """Create sidebar for market selection with category filters"""
+        from core.market_analyzer import MARKET_CATEGORIES
+        
         widget = QWidget()
         widget.setObjectName("sidebar")
         widget.setMaximumWidth(300)
@@ -213,6 +215,23 @@ class MainWindow(QMainWindow):
         title_font.setBold(True)
         title.setFont(title_font)
         layout.addWidget(title)
+        
+        # Category Filter Buttons
+        filter_label = QLabel("Filter by Category:")
+        filter_label_font = QFont()
+        filter_label_font.setBold(True)
+        filter_label.setFont(filter_label_font)
+        layout.addWidget(filter_label)
+        
+        # Create filter buttons
+        self.filter_buttons = {}
+        for category in MARKET_CATEGORIES.keys():
+            btn = QPushButton(f"✓ {category}")
+            btn.setCheckable(True)
+            btn.setChecked(True)  # All enabled by default
+            btn.clicked.connect(lambda checked, cat=category: self.filter_by_category(cat, checked))
+            self.filter_buttons[category] = btn
+            layout.addWidget(btn)
         
         # Select All / Deselect All
         btn_layout = QHBoxLayout()
@@ -231,7 +250,7 @@ class MainWindow(QMainWindow):
         # Market list
         self.market_list = QListWidget()
         self.market_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        self.market_list.addItems(list(FX_PAIRS.keys()))
+        self.populate_market_list()
         layout.addWidget(self.market_list)
         
         # Count label
@@ -243,6 +262,44 @@ class MainWindow(QMainWindow):
         self.market_list.itemSelectionChanged.connect(self.update_selected_count)
         
         return widget
+    
+    def populate_market_list(self):
+        """Populate market list based on active category filters"""
+        from core.market_analyzer import MARKET_CATEGORIES
+        
+        self.market_list.clear()
+        
+        # Get active categories
+        active_categories = [
+            cat for cat, btn in self.filter_buttons.items() 
+            if btn.isChecked()
+        ]
+        
+        # Collect all markets from active categories
+        visible_markets = []
+        for category in active_categories:
+            visible_markets.extend(MARKET_CATEGORIES[category])
+        
+        # Remove duplicates and sort
+        visible_markets = sorted(set(visible_markets))
+        
+        # Add to list
+        self.market_list.addItems(visible_markets)
+        
+        # Update count
+        self.update_selected_count()
+    
+    def filter_by_category(self, category, checked):
+        """Handle category filter toggle"""
+        # Update button text
+        btn = self.filter_buttons[category]
+        if checked:
+            btn.setText(f"✓ {category}")
+        else:
+            btn.setText(f"  {category}")
+        
+        # Repopulate list
+        self.populate_market_list()
     
     def create_main_content(self):
         """Create main content area"""
@@ -650,18 +707,40 @@ class MainWindow(QMainWindow):
         filter_stages = []
         initial_count = len(recommended)
         
-        # FILTER 1: % Change (PRIMARY FILTER)
+        # FILTER 1: % Change WITH DIRECTION ALIGNMENT (PRIMARY FILTER)
         if 'Based on % Change' in recommend_types or 'Based on % Gained' in recommend_types:
             before = len(recommended)
-            recommended = [
-                r for r in recommended
-                if any(
-                    abs(r.get(f'Lookback{i}', 0) or 0) >= recommend_percent
-                    for i in range(1, 4)
-                )
-            ]
+            new_recommended = []
+            
+            for r in recommended:
+                # Get the signal direction
+                strength = r.get('Strength', 0)
+                is_bullish = strength > 0
+                is_bearish = strength < 0
+                
+                # Check if ANY lookback meets the criteria AND matches direction
+                meets_criteria = False
+                for i in range(1, 4):
+                    lookback_value = r.get(f'Lookback{i}', 0) or 0
+                    
+                    # Check if lookback is significant enough
+                    if abs(lookback_value) >= recommend_percent:
+                        # Check if direction matches signal
+                        if is_bullish and lookback_value > 0:
+                            # Bullish signal + positive movement = match
+                            meets_criteria = True
+                            break
+                        elif is_bearish and lookback_value < 0:
+                            # Bearish signal + negative movement = match
+                            meets_criteria = True
+                            break
+                
+                if meets_criteria:
+                    new_recommended.append(r)
+            
+            recommended = new_recommended
             after = len(recommended)
-            filter_stages.append(f"Minimum {recommend_percent}% change: {before} → {after} markets")
+            filter_stages.append(f"Minimum {recommend_percent}% change (direction-aligned): {before} → {after} markets")
         
         # FILTER 2: Sentiment (SECONDARY FILTER)
         if 'Based on Sentiment' in recommend_types:
