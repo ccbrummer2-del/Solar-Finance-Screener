@@ -17,6 +17,7 @@ AVAILABLE_TIMEFRAMES = {
 }
 
 FX_PAIRS = {
+    # Major USD Pairs
     'EUR/USD': 'EURUSD=X',
     'GBP/USD': 'GBPUSD=X',
     'USD/JPY': 'USDJPY=X',
@@ -24,21 +25,179 @@ FX_PAIRS = {
     'AUD/USD': 'AUDUSD=X',
     'USD/CAD': 'USDCAD=X',
     'NZD/USD': 'NZDUSD=X',
+    
+    # EUR Crosses
     'EUR/GBP': 'EURGBP=X',
     'EUR/JPY': 'EURJPY=X',
-    'GBP/JPY': 'GBPJPY=X',
+    'EUR/CHF': 'EURCHF=X',
     'EUR/AUD': 'EURAUD=X',
     'EUR/CAD': 'EURCAD=X',
-    'AUD/JPY': 'AUDJPY=X',
+    'EUR/NZD': 'EURNZD=X',
+    
+    # GBP Crosses
+    'GBP/JPY': 'GBPJPY=X',
+    'GBP/CHF': 'GBPCHF=X',
     'GBP/AUD': 'GBPAUD=X',
+    'GBP/CAD': 'GBPCAD=X',
+    
+    # JPY Crosses
+    'AUD/JPY': 'AUDJPY=X',
+    'NZD/JPY': 'NZDJPY=X',
+    'CAD/JPY': 'CADJPY=X',
+    'CHF/JPY': 'CHFJPY=X',
+    
+    # AUD & NZD Crosses
+    'AUD/NZD': 'AUDNZD=X',
+    'AUD/CHF': 'AUDCHF=X',
+    'AUD/CAD': 'AUDCAD=X',
+    'NZD/CHF': 'NZDCHF=X',
+    'NZD/CAD': 'NZDCAD=X',
+    
+    # Indices
     'GER40': '^GDAXI',
     'US100': 'NQ=F',
     'US500': 'ES=F',
     'US30': 'YM=F',
     'US2000': 'RTY=F',
+    
+    # Commodities
     'XAUUSD': 'GC=F',
     'XAGUSD': 'SI=F',
-    'BTCUSD': 'BTC-USD'
+    'OIL': 'CL=F',
+    
+    # Crypto
+    'BTCUSD': 'BTC-USD',
+    
+    # US100 Stocks - Tech
+    'AAPL': 'AAPL',
+    'MSFT': 'MSFT',
+    'NVDA': 'NVDA',
+    'GOOGL': 'GOOGL',
+    'AMZN': 'AMZN',
+    'META': 'META',
+    'TSLA': 'TSLA',
+    'AVGO': 'AVGO',
+    'ORCL': 'ORCL',
+    'ADBE': 'ADBE',
+    'CRM': 'CRM',
+    'NFLX': 'NFLX',
+    'CSCO': 'CSCO',
+    'INTC': 'INTC',
+    'AMD': 'AMD',
+    'QCOM': 'QCOM',
+    'TXN': 'TXN',
+    'INTU': 'INTU',
+    'AMAT': 'AMAT',
+    'ADI': 'ADI',
+    'MU': 'MU',
+    'LRCX': 'LRCX',
+    'KLAC': 'KLAC',
+    'SNPS': 'SNPS',
+    'CDNS': 'CDNS',
+    'MRVL': 'MRVL',
+    'FTNT': 'FTNT',
+    'PANW': 'PANW',
+    'CRWD': 'CRWD',
+    'TEAM': 'TEAM',
+    
+    # US100 Stocks - Consumer
+    'COST': 'COST',
+    'PEP': 'PEP',
+    'SBUX': 'SBUX',
+    'MDLZ': 'MDLZ',
+    'MAR': 'MAR',
+    'ABNB': 'ABNB',
+    'BKNG': 'BKNG',
+    'LULU': 'LULU',
+    'ROST': 'ROST',
+    'MELI': 'MELI',
+    'DASH': 'DASH',
+    'CPRT': 'CPRT',
+    'ODFL': 'ODFL',
+    
+    # US100 Stocks - Healthcare/Biotech
+    'AMGN': 'AMGN',
+    'GILD': 'GILD',
+    'VRTX': 'VRTX',
+    'REGN': 'REGN',
+    'BIIB': 'BIIB',
+    'MRNA': 'MRNA',
+    'ILMN': 'ILMN',
+    'DXCM': 'DXCM',
+    
+    # US100 Stocks - Industrial/Energy
+    'HON': 'HON',
+    'ADP': 'ADP',
+    'PCAR': 'PCAR',
+    'PAYX': 'PAYX',
+    'FAST': 'FAST',
+    'CTAS': 'CTAS',
+    'VRSK': 'VRSK',
+    
+    # US100 Stocks - Communication/Media
+    'CMCSA': 'CMCSA',
+    'NXPI': 'NXPI',
+    'MCHP': 'MCHP',
+    
+    # US100 Stocks - Financial
+    'PYPL': 'PYPL',
+    'ADP': 'ADP',
+    'PAYX': 'PAYX',
+    
+    # US100 Stocks - Other
+    'WDAY': 'WDAY',
+    'MNST': 'MNST',
+    'EA': 'EA',
+    'XEL': 'XEL',
+    'CEG': 'CEG',
+    'ANSS': 'ANSS',
+    'DDOG': 'DDOG',
+    'ZS': 'ZS',
+    'TTWO': 'TTWO',
+    'IDXX': 'IDXX',
+    'CSGP': 'CSGP',
+    'WBD': 'WBD',
+    'GEHC': 'GEHC',
+    'ON': 'ON',
+    'FANG': 'FANG',
+    'BKR': 'BKR',
+    'DLTR': 'DLTR',
+    'KDP': 'KDP',
+    'SIRI': 'SIRI',
+    'ZM': 'ZM',
+}
+
+# Market Categories for filtering
+MARKET_CATEGORIES = {
+    'FX Majors': [
+        'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 
+        'AUD/USD', 'USD/CAD', 'NZD/USD'
+    ],
+    'FX Minors': [
+        'EUR/GBP', 'EUR/JPY', 'EUR/CHF', 'EUR/AUD', 'EUR/CAD', 'EUR/NZD',
+        'GBP/JPY', 'GBP/CHF', 'GBP/AUD', 'GBP/CAD',
+        'AUD/JPY', 'NZD/JPY', 'CAD/JPY', 'CHF/JPY',
+        'AUD/NZD', 'AUD/CHF', 'AUD/CAD', 'NZD/CHF', 'NZD/CAD'
+    ],
+    'Stocks': [
+        'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 
+        'ORCL', 'ADBE', 'CRM', 'NFLX', 'CSCO', 'INTC', 'AMD', 'QCOM', 
+        'TXN', 'INTU', 'AMAT', 'ADI', 'MU', 'LRCX', 'KLAC', 'SNPS', 
+        'CDNS', 'MRVL', 'FTNT', 'PANW', 'CRWD', 'TEAM', 'COST', 'PEP', 
+        'SBUX', 'MDLZ', 'MAR', 'ABNB', 'BKNG', 'LULU', 'ROST', 'MELI', 
+        'DASH', 'CPRT', 'ODFL', 'AMGN', 'GILD', 'VRTX', 'REGN', 'BIIB', 
+        'MRNA', 'ILMN', 'DXCM', 'HON', 'ADP', 'PCAR', 'PAYX', 'FAST', 
+        'CTAS', 'VRSK', 'CMCSA', 'NXPI', 'MCHP', 'PYPL', 'WDAY', 'MNST', 
+        'EA', 'XEL', 'CEG', 'ANSS', 'DDOG', 'ZS', 'TTWO', 'IDXX', 'CSGP', 
+        'WBD', 'GEHC', 'ON', 'FANG', 'BKR', 'DLTR', 'KDP', 'SIRI', 'ZM'
+    ],
+    'Commodities/CFDs': [
+        'GER40', 'US100', 'US500', 'US30', 'US2000',
+        'XAUUSD', 'XAGUSD', 'OIL'
+    ],
+    'Cryptos': [
+        'BTCUSD'
+    ]
 }
 
 def calculate_sentiment(df, max_diff=10.0):
